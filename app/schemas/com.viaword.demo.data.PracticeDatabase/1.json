@@ -1,0 +1,248 @@
+{
+  "formatVersion": 1,
+  "database": {
+    "version": 1,
+    "identityHash": "241ef51a6226da7b97e0095f4afa3a60",
+    "entities": [
+      {
+        "tableName": "learned_word",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`wordId` TEXT NOT NULL, `learnedDay` INTEGER NOT NULL, PRIMARY KEY(`wordId`))",
+        "fields": [
+          {
+            "fieldPath": "wordId",
+            "columnName": "wordId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "learnedDay",
+            "columnName": "learnedDay",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "wordId"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_learned_word_learnedDay",
+            "unique": false,
+            "columnNames": [
+              "learnedDay"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_learned_word_learnedDay` ON `${TABLE_NAME}` (`learnedDay`)"
+          }
+        ]
+      },
+      {
+        "tableName": "review_schedule",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`wordId` TEXT NOT NULL, `questionType` TEXT NOT NULL, `dueDay` INTEGER NOT NULL, `correctStreak` INTEGER NOT NULL, `audioRetryDay` INTEGER, PRIMARY KEY(`wordId`, `questionType`))",
+        "fields": [
+          {
+            "fieldPath": "wordId",
+            "columnName": "wordId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "questionType",
+            "columnName": "questionType",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "dueDay",
+            "columnName": "dueDay",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "correctStreak",
+            "columnName": "correctStreak",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "audioRetryDay",
+            "columnName": "audioRetryDay",
+            "affinity": "INTEGER"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "wordId",
+            "questionType"
+          ]
+        }
+      },
+      {
+        "tableName": "practice_session",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`sessionId` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `openSlot` INTEGER, `kind` TEXT NOT NULL, `unitId` TEXT, `phase` TEXT NOT NULL, `stage` TEXT NOT NULL, `currentOrdinal` INTEGER, `feedbackInput` TEXT, `finishedDay` INTEGER, `endedByDailyLimit` INTEGER NOT NULL DEFAULT 0)",
+        "fields": [
+          {
+            "fieldPath": "sessionId",
+            "columnName": "sessionId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "openSlot",
+            "columnName": "openSlot",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "kind",
+            "columnName": "kind",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "unitId",
+            "columnName": "unitId",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "phase",
+            "columnName": "phase",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "stage",
+            "columnName": "stage",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "currentOrdinal",
+            "columnName": "currentOrdinal",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "feedbackInput",
+            "columnName": "feedbackInput",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "finishedDay",
+            "columnName": "finishedDay",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "endedByDailyLimit",
+            "columnName": "endedByDailyLimit",
+            "affinity": "INTEGER",
+            "notNull": true,
+            "defaultValue": "0"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "sessionId"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_practice_session_openSlot",
+            "unique": true,
+            "columnNames": [
+              "openSlot"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_practice_session_openSlot` ON `${TABLE_NAME}` (`openSlot`)"
+          }
+        ]
+      },
+      {
+        "tableName": "practice_item",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`sessionId` INTEGER NOT NULL, `ordinal` INTEGER NOT NULL, `wordId` TEXT NOT NULL, `questionType` TEXT, `learnCompletedDay` INTEGER, `firstOutcome` TEXT, `firstResolvedDay` INTEGER, `firstNextDueDay` INTEGER, `retryOrdinal` INTEGER, `retryOutcome` TEXT, PRIMARY KEY(`sessionId`, `ordinal`), FOREIGN KEY(`sessionId`) REFERENCES `practice_session`(`sessionId`) ON UPDATE NO ACTION ON DELETE NO ACTION )",
+        "fields": [
+          {
+            "fieldPath": "sessionId",
+            "columnName": "sessionId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "ordinal",
+            "columnName": "ordinal",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "wordId",
+            "columnName": "wordId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "questionType",
+            "columnName": "questionType",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "learnCompletedDay",
+            "columnName": "learnCompletedDay",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "firstOutcome",
+            "columnName": "firstOutcome",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "firstResolvedDay",
+            "columnName": "firstResolvedDay",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "firstNextDueDay",
+            "columnName": "firstNextDueDay",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "retryOrdinal",
+            "columnName": "retryOrdinal",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "retryOutcome",
+            "columnName": "retryOutcome",
+            "affinity": "TEXT"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "sessionId",
+            "ordinal"
+          ]
+        },
+        "foreignKeys": [
+          {
+            "table": "practice_session",
+            "onDelete": "NO ACTION",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "sessionId"
+            ],
+            "referencedColumns": [
+              "sessionId"
+            ]
+          }
+        ]
+      }
+    ],
+    "setupQueries": [
+      "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '241ef51a6226da7b97e0095f4afa3a60')"
+    ]
+  }
+}
