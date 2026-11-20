@@ -43,7 +43,9 @@ private fun TodayPreview(
 ) {
     ViawordTheme {
         RootLayout(RootTab.Today, onTab = {}) {
-            TodayScreen(sampleUnits.first(), newWords, due, active, finished, nextReview, onOpenUnit = {})
+            TodayScreen(
+                sampleUnits.first(), newWords, due, active, finished, nextReview, onOpenUnit = {}, onOpenSettings = {},
+            )
         }
     }
 }

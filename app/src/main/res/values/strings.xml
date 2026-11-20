@@ -1,5 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="settings">設定</string>
+    <string name="eager_learning_mode">好學模式</string>
+    <string name="eager_learning_description">完成當天的新詞和到期複習後，可以繼續學新詞。</string>
+    <string name="continue_new_words">繼續學新詞</string>
     <string name="app_name" translatable="false">Viaword</string>
     <string name="textbook">英语词汇练习</string>
     <string name="sample_library">示例词库</string>

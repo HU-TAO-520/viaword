@@ -14,7 +14,12 @@ class CurrentUnitPreferences(context: Context, private val units: List<WordUnit>
         preferences.edit().putString(KEY, unit.id).apply()
     }
 
+    var eagerLearningEnabled: Boolean
+        get() = preferences.getBoolean(EAGER_LEARNING_KEY, false)
+        set(value) { preferences.edit().putBoolean(EAGER_LEARNING_KEY, value).apply() }
+
     private companion object {
         const val KEY = "current_unit_id"
+        const val EAGER_LEARNING_KEY = "eager_learning_enabled"
     }
 }

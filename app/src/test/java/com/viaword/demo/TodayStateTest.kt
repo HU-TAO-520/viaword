@@ -27,4 +27,14 @@ class TodayStateTest {
         assertEquals(TodayState.Finished, todayState(0, 0, null, true))
         assertEquals(TodayState.Idle, todayState(0, 0, null, false))
     }
+
+    @Test
+    fun extraWordsAppearOnlyOnTheCompletedCardAfterAnyOpenRound() {
+        val retry = ActivePractice(PracticeType.Review, 18, 18, retry = true)
+        val summary = retry.copy(retry = false, summary = true)
+        assertEquals(TodayState.Reviewing, todayState(0, 0, retry, true, extraNewCount = 6))
+        assertEquals(TodayState.Reviewing, todayState(0, 0, summary, true, extraNewCount = 6))
+        assertEquals(TodayState.Finished, todayState(0, 0, null, false, extraNewCount = 6))
+        assertEquals(TodayState.Finished, todayState(0, 0, null, true, extraNewCount = 0))
+    }
 }

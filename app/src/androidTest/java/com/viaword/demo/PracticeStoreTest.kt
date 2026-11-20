@@ -1,5 +1,6 @@
 package com.viaword.demo
 
+import android.content.ContextWrapper
 import android.database.sqlite.SQLiteConstraintException
 import androidx.room.Room
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -29,6 +30,11 @@ class PracticeStoreTest {
     private var dateReads = 0
     private val units = sampleUnits
     private var unit = units.first()
+    private var eager = false
+    private val extendedUnit = WordUnit(
+        "extended", "Extended", List(19) { units.first().entries.first().copy(id = "extended-$it") },
+    )
+    private val extendedCatalog = units + extendedUnit
     private lateinit var db: PracticeDatabase
     private lateinit var store: PracticeStore
     private val dbName = "test-${UUID.randomUUID()}.db"
@@ -43,7 +49,7 @@ class PracticeStoreTest {
         if (::db.isInitialized) db.close()
         db = if (file) Room.databaseBuilder(context, PracticeDatabase::class.java, dbName).build()
         else Room.inMemoryDatabaseBuilder(context, PracticeDatabase::class.java).build()
-        store = PracticeStore(db, { unit.id }, { dateReads++; date }, catalog)
+        store = PracticeStore(db, { unit.id }, { dateReads++; date }, catalog) { eager }
     }
 
     private val TaskSnapshot.round get() = requireNotNull(practice)
@@ -334,5 +340,196 @@ class PracticeStoreTest {
         assertEquals(0, store.read().dueQuestionCount)
         assertNull(store.read().nextReviewDate)
         assertNull(store.start(PracticeKind.REVIEW, unit.id).practice)
+    }
+
+    @Test fun g1MissingPreferenceDefaultsOffAndPartialQuotaStaysRegular() = runBlocking {
+        val isolated = object : ContextWrapper(context) {
+            override fun getSharedPreferences(name: String, mode: Int) =
+                context.getSharedPreferences(dbName, mode)
+        }
+        try {
+            val preferences = CurrentUnitPreferences(isolated, units)
+            assertFalse(preferences.eagerLearningEnabled)
+            preferences.eagerLearningEnabled = true
+            assertTrue(CurrentUnitPreferences(isolated, units).eagerLearningEnabled)
+        } finally {
+            context.deleteSharedPreferences(dbName)
+        }
+        connect(catalog = extendedCatalog)
+        eager = true
+        unit = units.last()
+        learnUnit()
+        val fourth = units.first().entries.first().id
+        dao.insertLearned(LearnedWord(fourth, date.toEpochDay()))
+        dao.insertSchedules(QuestionType.entries.map { ReviewSchedule(fourth, it, date.plusDays(1).toEpochDay()) })
+        unit = extendedUnit
+        val started = store.start(PracticeKind.LEARN, unit.id)
+        assertEquals(2, started.remainingNewWords)
+        assertEquals(2, started.round.total)
+        assertFalse(started.extraLearningAllowed)
+        repeat(2) { move(Move.NEXT_WORD) }
+        val available = move(Move.CLOSE)
+        assertEquals(0, available.remainingNewWords)
+        assertEquals(0, available.regularNewCount)
+        assertEquals(6, available.extraNewCount)
+        assertNull(store.start(PracticeKind.LEARN, units.first().id).practice)
+        assertEquals(6, store.start(PracticeKind.LEARN, unit.id).round.total)
+    }
+
+    @Test fun g2AllDueRoundsAndTheirRetryAndSummaryMustCloseFirst() = runBlocking {
+        connect(catalog = extendedCatalog)
+        learnUnit()
+        date = firstDay.plusDays(1)
+        unit = units.last()
+        learnUnit()
+        date = firstDay.plusDays(2)
+        eager = true
+        unit = extendedUnit
+        learnUnit()
+        suspend fun blocked(expected: Int, active: Practice? = null) {
+            val rejected = store.start(PracticeKind.LEARN, unit.id)
+            assertEquals(expected, rejected.dueQuestionCount)
+            assertEquals(active, rejected.practice)
+            assertEquals(0, rejected.remainingNewWords)
+        }
+        blocked(27)
+        assertEquals(18, store.start(PracticeKind.REVIEW, unit.id).round.total)
+        repeat(18) { answerCorrectly() }
+        blocked(9, store.read().round)
+        move(Move.CLOSE)
+        blocked(9)
+        assertEquals(9, store.start(PracticeKind.REVIEW, unit.id).round.total)
+        move(Move.REVEAL)
+        move(Move.FORGOT)
+        repeat(8) { answerCorrectly() }
+        val retry = store.read().round
+        assertEquals(Phase.RETRY, retry.session.phase)
+        blocked(0, retry)
+        answerCorrectly()
+        val summary = store.read().round
+        assertEquals(Phase.SUMMARY, summary.session.phase)
+        blocked(0, summary)
+        assertEquals(6, move(Move.CLOSE).extraNewCount)
+        assertEquals(6, store.start(PracticeKind.LEARN, unit.id).round.total)
+    }
+
+    @Test fun g3ConsecutiveBatchesKeepOrderAndScheduleEachConfirmationOnce() = runBlocking {
+        connect(catalog = extendedCatalog)
+        eager = true
+        unit = extendedUnit
+        learnUnit()
+        for (batch in unit.entries.drop(6).chunked(6)) {
+            val round = store.start(PracticeKind.LEARN, unit.id).round
+            assertEquals(batch.map { it.id }, round.items.map { it.wordId })
+            assertEquals(round, store.start(PracticeKind.LEARN, unit.id).round)
+            for (word in batch) {
+                val card = store.read().round
+                assertEquals(word.id, card.item.wordId)
+                val updated = store.move(card.step, Move.NEXT_WORD)
+                assertEquals(updated, store.move(card.step, Move.NEXT_WORD))
+                assertEquals(
+                    QuestionType.entries.map { ReviewSchedule(word.id, it, date.plusDays(1).toEpochDay()) }.toSet(),
+                    dao.schedules().filter { it.wordId == word.id }.toSet(),
+                )
+            }
+            assertEquals(batch.size, store.read().round.completed)
+            move(Move.CLOSE)
+        }
+        assertEquals(19, dao.learnedWords().size)
+        assertEquals(57, dao.schedules().size)
+        assertEquals(0, store.read().availableNewCount)
+        assertNull(store.start(PracticeKind.LEARN, unit.id).practice)
+        db.openHelper.readableDatabase.query("SELECT COUNT(*) FROM practice_session").use {
+            assertTrue(it.moveToFirst())
+            assertEquals(4, it.getInt(0))
+        }
+    }
+
+    private suspend fun reopenOnThirdExtraCard(): Practice {
+        connect(file = true, catalog = extendedCatalog)
+        eager = true
+        unit = extendedUnit
+        learnUnit()
+        store.start(PracticeKind.LEARN, unit.id)
+        repeat(2) { move(Move.NEXT_WORD) }
+        val third = store.read().round
+        connect(file = true, catalog = extendedCatalog)
+        assertEquals(third, store.read().round)
+        return third
+    }
+
+    @Test fun g4FileReopenWithModeOnConfirmsTheThirdCard() = runBlocking {
+        val third = reopenOnThirdExtraCard()
+        assertEquals(3, move(Move.NEXT_WORD).round.completed)
+        assertEquals(date.toEpochDay(), dao.learnedWords().single { it.wordId == third.item.wordId }.learnedDay)
+    }
+
+    @Test fun g4FileReopenThenDisablingModeSettlesOnlyConfirmedCards() = runBlocking {
+        val third = reopenOnThirdExtraCard()
+        val before = dao.learnedWords()
+        eager = false
+        assertEquals(third, store.read().round)
+        val stopped = move(Move.NEXT_WORD).round
+        assertTrue(stopped.session.endedByDailyLimit)
+        assertEquals(2, stopped.completed)
+        assertEquals(before, dao.learnedWords())
+        assertEquals(24, dao.schedules().size)
+        move(Move.CLOSE)
+        eager = true
+        val resumed = store.start(PracticeKind.LEARN, unit.id).round
+        assertEquals(third.item.wordId, resumed.item.wordId)
+        assertEquals(1, move(Move.NEXT_WORD).round.completed)
+    }
+
+    @Test fun g4OriginalQueueUsesConfirmationDateAndStopsAfterClockRollback() = runBlocking {
+        connect(file = true, catalog = extendedCatalog)
+        eager = true
+        unit = extendedUnit
+        learnUnit()
+        val first = store.start(PracticeKind.LEARN, unit.id).round.item.wordId
+        val second = move(Move.NEXT_WORD).round
+        val firstSchedules = dao.schedules().filter { it.wordId == first }
+        assertEquals(3, firstSchedules.count { it.effectiveDay == firstDay.plusDays(1).toEpochDay() })
+        unit = units.last()
+        date = firstDay.plusDays(1)
+        connect(file = true, catalog = extendedCatalog)
+        assertEquals(second, store.read().round)
+        val continued = move(Move.NEXT_WORD)
+        assertEquals(5, continued.remainingNewWords)
+        assertEquals(unit, continued.unit)
+        assertEquals(date.toEpochDay(), dao.learnedWords().single { it.wordId == second.item.wordId }.learnedDay)
+        assertEquals(3, dao.schedules().count { it.wordId == second.item.wordId && it.dueDay == date.plusDays(1).toEpochDay() })
+        // Simulate another visit to this local date with its quota already exhausted.
+        for (word in units.first().entries.take(5)) dao.insertLearned(LearnedWord(word.id, date.toEpochDay()))
+        date = date.plusDays(1)
+        assertEquals(6, store.read().remainingNewWords)
+        date = date.minusDays(1)
+        assertTrue(store.read().dueQuestionCount > 0)
+        assertFalse(store.read().extraLearningAllowed)
+        val stopped = move(Move.NEXT_WORD).round
+        assertTrue(stopped.session.endedByDailyLimit)
+        assertEquals(2, stopped.completed)
+        assertEquals(firstSchedules, dao.schedules().filter { it.wordId == first })
+        assertTrue(dao.schedules().none { it.wordId == continued.round.item.wordId })
+    }
+
+    @Test fun g5OnlyEffectiveReviewsInTheCurrentCatalogGateExtraLearning() = runBlocking {
+        connect(catalog = extendedCatalog)
+        eager = true
+        unit = extendedUnit
+        learnUnit()
+        val day = date.toEpochDay()
+        val deferred = ReviewSchedule(units.last().entries.first().id, QuestionType.DICTATION, day, audioRetryDay = day + 1)
+        dao.insertSchedules(listOf(deferred, ReviewSchedule("removed", QuestionType.MEANING, day)))
+        val available = store.read()
+        assertEquals(0, available.dueQuestionCount)
+        assertEquals(6, available.extraNewCount)
+        assertNull(store.start(PracticeKind.REVIEW, unit.id).practice)
+        val extra = store.start(PracticeKind.LEARN, unit.id).round
+        dao.updateSchedule(deferred.copy(audioRetryDay = null))
+        val stopped = store.move(extra.step, Move.NEXT_WORD)
+        assertEquals(1, stopped.dueQuestionCount)
+        assertTrue(stopped.round.session.endedByDailyLimit)
+        assertEquals(0, stopped.round.completed)
     }
 }

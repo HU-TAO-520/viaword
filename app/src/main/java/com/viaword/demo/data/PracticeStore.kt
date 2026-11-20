@@ -18,33 +18,41 @@ internal data class TaskSnapshot(
     val date: LocalDate,
     val availableNewCount: Int,
     val remainingNewWords: Int,
+    val extraLearningAllowed: Boolean,
     val dueQuestionCount: Int,
     val practice: Practice?,
     val finishedTaskToday: Boolean,
     val nextReviewDate: LocalDate?,
     val libraryUpdated: Boolean,
-)
+) {
+    val regularNewCount get() = if (extraLearningAllowed) 0 else availableNewCount
+    val extraNewCount get() = if (extraLearningAllowed) availableNewCount else 0
+}
 
 internal class PracticeStore(
     private val db: PracticeDatabase,
     private val currentUnitId: () -> String,
     private val today: () -> LocalDate = { LocalDate.now() },
     private val units: List<WordUnit> = sampleUnits,
+    private val eagerLearningEnabled: () -> Boolean = { false },
 ) {
     private val dao = db.practiceDao()
     private val words = units.flatMap { it.entries }.associateBy { it.id }
     private val positions = words.keys.withIndex().associate { (index, id) -> id to index }
 
-    suspend fun read(): TaskSnapshot = transact { _, _, _ -> }
+    suspend fun read(): TaskSnapshot = transact { _, _, _, _ -> }
 
-    suspend fun start(kind: PracticeKind, unitId: String): TaskSnapshot = transact { date, unit, active ->
+    suspend fun start(kind: PracticeKind, unitId: String): TaskSnapshot = transact { date, unit, active, eager ->
         if (active != null || unit.id != unitId) return@transact
         val day = date.toEpochDay()
         val session: PracticeSession
         val entries: List<Pair<String, QuestionType?>>
         if (kind == PracticeKind.LEARN) {
             val learned = dao.learnedWords()
-            entries = newWords(unit, learned, remainingNewWords(learned, day)).map { it.id to null }
+            val limit = learningLimit(remainingNewWords(learned, day), eager) {
+                dueQuestionCount(currentSchedules(), day)
+            }
+            entries = newWords(unit, learned, limit).map { it.id to null }
             session = PracticeSession(kind = kind, unitId = unitId, phase = Phase.LEARN, stage = Stage.CARD)
         } else {
             entries = reviewQueue(dueReviews(dao.schedules(), positions, day)).map { it.wordId to it.questionType }
@@ -56,11 +64,11 @@ internal class PracticeStore(
     }
 
     suspend fun move(step: PracticeStep, move: Move, input: AnswerInput = AnswerInput()): TaskSnapshot =
-        transact { date, _, active ->
+        transact { date, _, active, eager ->
             if (active == null || active.step != step) return@transact
             val session = active.session
             when (session.stage) {
-                Stage.CARD -> if (move == Move.NEXT_WORD) confirmWord(active, date)
+                Stage.CARD -> if (move == Move.NEXT_WORD) confirmWord(active, date, eager)
                 Stage.SUMMARY -> if (move == Move.CLOSE) {
                     dao.updateSession(session.copy(openSlot = null, feedbackInput = null))
                 }
@@ -79,10 +87,11 @@ internal class PracticeStore(
         }
 
     private suspend fun transact(
-        action: suspend (LocalDate, WordUnit, Practice?) -> Unit,
+        action: suspend (LocalDate, WordUnit, Practice?, Boolean) -> Unit,
     ): TaskSnapshot = db.withTransaction {
         val date = today()
         val day = date.toEpochDay()
+        val eager = eagerLearningEnabled()
         val id = currentUnitId()
         val unit = units.firstOrNull { it.id == id } ?: units.first()
         val active = openPractice()
@@ -93,14 +102,16 @@ internal class PracticeStore(
         if (invalid) {
             dao.updateSession(requireNotNull(active).session.copy(openSlot = null, feedbackInput = null))
         } else {
-            action(date, unit, active)
+            action(date, unit, active, eager)
         }
         val learned = dao.learnedWords()
         val remaining = remainingNewWords(learned, day)
-        val schedules = dao.schedules().filter { it.wordId in positions }
+        val schedules = currentSchedules()
+        val dueCount = dueQuestionCount(schedules, day)
+        val limit = learningLimit(remaining, eager) { dueCount }
         TaskSnapshot(
-            unit, date, newWords(unit, learned, remaining).size, remaining,
-            schedules.count { it.effectiveDay <= day }, openPractice(), dao.finishedOn(day),
+            unit, date, newWords(unit, learned, limit).size, remaining, limit > remaining,
+            dueCount, openPractice(), dao.finishedOn(day),
             schedules.map { it.effectiveDay }.filter { it > day }.minOrNull()?.let(LocalDate::ofEpochDay),
             libraryUpdated = invalid,
         )
@@ -108,13 +119,24 @@ internal class PracticeStore(
 
     private suspend fun openPractice() = dao.openSession()?.let { Practice(it, dao.items(it.sessionId)) }
 
-    private suspend fun confirmWord(active: Practice, date: LocalDate) {
+    private suspend fun currentSchedules() = dao.schedules().filter { it.wordId in positions }
+
+    private fun dueQuestionCount(schedules: List<ReviewSchedule>, day: Long) =
+        schedules.count { it.effectiveDay <= day }
+
+    private suspend fun learningLimit(remaining: Int, eager: Boolean, dueCount: suspend () -> Int) =
+        if (remaining == 0 && eager && dueCount() == 0) DAILY_WORD_LIMIT else remaining
+
+    private suspend fun confirmWord(active: Practice, date: LocalDate, eager: Boolean) {
         val item = active.item
         val day = date.toEpochDay()
         val learned = dao.learnedWords()
         if (item.learnCompletedDay != null || learned.any { it.wordId == item.wordId }) return
         val session = active.session
-        if (remainingNewWords(learned, day) == 0) {
+        val limit = learningLimit(remainingNewWords(learned, day), eager) {
+            dueQuestionCount(currentSchedules(), day)
+        }
+        if (limit == 0) {
             summarize(session.copy(endedByDailyLimit = true), date)
             return
         }

@@ -80,6 +80,17 @@ internal fun SupportingText(text: String, modifier: Modifier = Modifier) {
 }
 
 @Composable
+internal fun SubpageHeader(title: String, onBack: () -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().padding(start = 8.dp, end = pageMargin, top = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        BackButton(onBack)
+        Text(title, Modifier.weight(1f), style = MaterialTheme.typography.headlineMedium)
+    }
+}
+
+@Composable
 internal fun BackButton(onBack: () -> Unit) {
     val label = stringResource(R.string.back)
     IconButton(onClick = onBack, modifier = Modifier.size(48.dp).semantics {

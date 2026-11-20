@@ -9,9 +9,12 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
@@ -20,6 +23,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
@@ -36,13 +40,15 @@ fun TodayScreen(
     finishedTaskToday: Boolean,
     nextReviewDate: LocalDate?,
     onOpenUnit: () -> Unit,
+    onOpenSettings: () -> Unit,
+    extraNewCount: Int = 0,
     onStartStudy: (() -> Unit)? = null,
     onStartReview: (() -> Unit)? = null,
     onResume: (() -> Unit)? = null,
     status: Int? = null,
     onRetry: (() -> Unit)? = null,
 ) {
-    val state = todayState(availableNewCount, dueQuestionCount, activePractice, finishedTaskToday)
+    val state = todayState(availableNewCount, dueQuestionCount, activePractice, finishedTaskToday, extraNewCount)
     val words = stringResource(R.string.word_count, availableNewCount)
     val questions = stringResource(R.string.question_count, dueQuestionCount)
     val nextReview = nextReviewDate?.let {
@@ -53,7 +59,12 @@ fun TodayScreen(
             .padding(horizontal = pageMargin, vertical = 20.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        Column { TextbookHeader(stringResource(R.string.app_name)) }
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
+            Column(Modifier.weight(1f)) { TextbookHeader(stringResource(R.string.app_name)) }
+            IconButton(onClick = onOpenSettings, modifier = Modifier.size(48.dp)) {
+                Icon(painterResource(R.drawable.ic_settings), contentDescription = stringResource(R.string.settings))
+            }
+        }
         Text(
             stringResource(R.string.today_heading),
             Modifier.padding(top = 8.dp),
@@ -108,7 +119,14 @@ fun TodayScreen(
                 PracticeCard(R.string.new_words, words, R.string.start_study, onStartStudy)
                 SupportingText(stringResource(R.string.no_due_review))
             }
-            TodayState.Finished -> PracticeCard(R.string.finished_today, nextReview)
+            TodayState.Finished -> if (extraNewCount > 0) {
+                PracticeCard(
+                    R.string.finished_today, stringResource(R.string.word_count, extraNewCount),
+                    R.string.continue_new_words, onStartStudy, subtitle = nextReview,
+                )
+            } else {
+                PracticeCard(R.string.finished_today, nextReview)
+            }
             TodayState.Idle -> PracticeCard(R.string.no_practice, nextReview)
         }
         if (currentUnit != null) Surface(

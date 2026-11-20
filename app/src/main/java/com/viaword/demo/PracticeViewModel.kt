@@ -28,7 +28,10 @@ import kotlinx.coroutines.launch
 
 internal class PracticeViewModel(app: Application) : AndroidViewModel(app) {
     private val preferences = CurrentUnitPreferences(app, AppCatalog.units)
-    private val store = PracticeStore(PracticeDatabase.get(app), preferences::readId, units = AppCatalog.units)
+    private val store = PracticeStore(
+        PracticeDatabase.get(app), preferences::readId, units = AppCatalog.units,
+        eagerLearningEnabled = { preferences.eagerLearningEnabled },
+    )
     private var answer by mutableStateOf(AnswerInput())
     private var refreshPending = false
     private var failedAction: Write? = null
@@ -48,8 +51,16 @@ internal class PracticeViewModel(app: Application) : AndroidViewModel(app) {
 
     var tab by mutableStateOf(RootTab.Today)
     var openUnitId by mutableStateOf<String?>(null)
+    var settingsVisible by mutableStateOf(false)
+    var eagerLearningEnabled by mutableStateOf(preferences.eagerLearningEnabled)
+        private set
     var practiceVisible by mutableStateOf(false)
         private set
+
+    fun setEagerLearning(enabled: Boolean) {
+        preferences.eagerLearningEnabled = enabled
+        eagerLearningEnabled = enabled
+    }
 
     fun refresh() {
         if (busy) {
@@ -122,6 +133,7 @@ internal class PracticeViewModel(app: Application) : AndroidViewModel(app) {
     fun showToday() {
         tab = RootTab.Today
         openUnitId = null
+        settingsVisible = false
     }
 
     private class Write(

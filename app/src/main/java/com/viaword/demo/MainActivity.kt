@@ -33,6 +33,7 @@ import com.viaword.demo.ui.PracticeScreen
 import com.viaword.demo.ui.PracticeType
 import com.viaword.demo.ui.RootLayout
 import com.viaword.demo.ui.RootTab
+import com.viaword.demo.ui.SettingsScreen
 import com.viaword.demo.ui.TodayScreen
 import com.viaword.demo.ui.UnitWordsScreen
 import com.viaword.demo.ui.ViawordTheme
@@ -72,7 +73,7 @@ private fun ViawordApp(model: PracticeViewModel, audio: SampleAudio) {
     val currentUnit = tasks?.unit
     val openUnit = AppCatalog.units.firstOrNull { it.id == model.openUnitId }
     val ready = tasks != null && !model.busy && !model.readFailed && !model.saveFailed
-    val home = !model.practiceVisible && model.tab == RootTab.Today && openUnit == null
+    val home = !model.practiceVisible && !model.settingsVisible && model.tab == RootTab.Today && openUnit == null
     val error = when {
         model.saveFailed -> R.string.progress_save_failed
         model.readFailed -> R.string.progress_read_failed
@@ -82,7 +83,8 @@ private fun ViawordApp(model: PracticeViewModel, audio: SampleAudio) {
     LaunchedEffect(home) {
         if (home) model.refresh()
     }
-    val watchDate = home || model.practiceVisible && practice?.session?.stage == Stage.SUMMARY
+    val watchDate = home || !model.practiceVisible && openUnit != null ||
+        model.practiceVisible && practice?.session?.stage == Stage.SUMMARY
     LaunchedEffect(watchDate) {
         while (watchDate) {
             delay(30_000)
@@ -102,6 +104,12 @@ private fun ViawordApp(model: PracticeViewModel, audio: SampleAudio) {
     fun closeList() {
         audio.stop()
         model.openUnitId = null
+    }
+
+    if (model.settingsVisible) {
+        BackHandler(onBack = model::showToday)
+        SettingsScreen(model.eagerLearningEnabled, model::setEagerLearning, model::showToday)
+        return
     }
 
     if (model.practiceVisible && practice != null && tasks != null) {
@@ -172,11 +180,12 @@ private fun ViawordApp(model: PracticeViewModel, audio: SampleAudio) {
             currentUnit == null -> null
             !isCurrent -> R.string.set_current_unit
             practice != null -> R.string.go_to_today
+            tasks.extraNewCount > 0 -> R.string.continue_new_words
             else -> R.string.study_unit
         }
         val unavailable = when {
             !isCurrent || practice != null -> null
-            tasks.remainingNewWords == 0 -> R.string.daily_limit
+            tasks.remainingNewWords == 0 && !tasks.extraLearningAllowed -> R.string.daily_limit
             tasks.availableNewCount == 0 -> R.string.unit_finished
             else -> null
         }
@@ -190,7 +199,7 @@ private fun ViawordApp(model: PracticeViewModel, audio: SampleAudio) {
                 when (action) {
                     R.string.set_current_unit -> model.selectUnit(openUnit)
                     R.string.go_to_today -> model.showToday()
-                    R.string.study_unit -> model.start(PracticeKind.LEARN, openUnit.id)
+                    R.string.study_unit, R.string.continue_new_words -> model.start(PracticeKind.LEARN, openUnit.id)
                 }
             },
             onPlay = { id -> audio.play(id) {} },
@@ -204,7 +213,8 @@ private fun ViawordApp(model: PracticeViewModel, audio: SampleAudio) {
             when (model.tab) {
                 RootTab.Today -> TodayScreen(
                     currentUnit = currentUnit,
-                    availableNewCount = tasks?.availableNewCount ?: 0,
+                    availableNewCount = tasks?.regularNewCount ?: 0,
+                    extraNewCount = tasks?.extraNewCount ?: 0,
                     dueQuestionCount = tasks?.dueQuestionCount ?: 0,
                     activePractice = practice?.let {
                         val learning = it.session.kind == PracticeKind.LEARN
@@ -220,6 +230,7 @@ private fun ViawordApp(model: PracticeViewModel, audio: SampleAudio) {
                     finishedTaskToday = tasks?.finishedTaskToday == true,
                     nextReviewDate = tasks?.nextReviewDate,
                     onOpenUnit = { model.openUnitId = currentUnit?.id },
+                    onOpenSettings = { model.settingsVisible = true },
                     onStartStudy = if (ready) ({ model.start(PracticeKind.LEARN, requireNotNull(currentUnit).id) }) else null,
                     onStartReview = if (ready) ({ model.start(PracticeKind.REVIEW, requireNotNull(currentUnit).id) }) else null,
                     onResume = if (ready) model::resumePractice else null,

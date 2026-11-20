@@ -18,11 +18,12 @@ fun todayState(
     dueQuestionCount: Int,
     activePractice: ActivePractice?,
     finishedTaskToday: Boolean,
+    extraNewCount: Int = 0,
 ): TodayState = when {
     activePractice?.type == PracticeType.Study -> TodayState.Studying
     activePractice?.type == PracticeType.Review -> TodayState.Reviewing
     dueQuestionCount > 0 -> TodayState.DueReview
     availableNewCount > 0 -> TodayState.NewWords
-    finishedTaskToday -> TodayState.Finished
+    finishedTaskToday || extraNewCount > 0 -> TodayState.Finished
     else -> TodayState.Idle
 }

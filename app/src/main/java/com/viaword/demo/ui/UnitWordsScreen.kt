@@ -1,7 +1,6 @@
 package com.viaword.demo.ui
 
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -32,13 +31,7 @@ fun UnitWordsScreen(
 ) {
     Surface(color = MaterialTheme.colorScheme.background) {
         Column(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing)) {
-            Row(
-                Modifier.fillMaxWidth().padding(start = 8.dp, end = pageMargin, top = 8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                BackButton(onBack)
-                Text(unit.title, Modifier.weight(1f), style = MaterialTheme.typography.headlineMedium)
-            }
+            SubpageHeader(unit.title, onBack)
 
             LazyColumn(
                 Modifier.weight(1f).fillMaxWidth().padding(horizontal = pageMargin),
